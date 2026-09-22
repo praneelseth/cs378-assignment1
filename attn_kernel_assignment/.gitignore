@@ -1,0 +1,7 @@
+build/
+.venv/
+__pycache__/
+*.so
+*.pyc
+submission.zip
+submission.tar.gz
