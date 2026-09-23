@@ -92,11 +92,10 @@ __global__ void flash_attn_fw_kernel(const float *Q, const float *K,
       // accumulate row_l = sum_y S[tx*Bc + y].
       float row_l = 0.0f;
       // BEGIN ASSIGN1_3_2
-      // TODO: your implementation of ASSIGN1_3_2 here
       for (int y = 0; y < Bc; y++) {
-        float transformed = __expf(S[tx * Bc + y] - row_m);
-        S[tx * Bc + y] = transformed;
-        row_l += transformed;
+        float p = __expf(S[tx * Bc + y] - row_m);
+        S[tx * Bc + y] = p;
+        row_l += p;
       }
       // END ASSIGN1_3_2
 
@@ -108,18 +107,22 @@ __global__ void flash_attn_fw_kernel(const float *Q, const float *K,
       //                 + e^{row_m - m_new} * sum_y S[tx,y] * Vj[y,x] ) / l_new
       // Then write m_new -> m[...], l_new -> l[...].
       // BEGIN ASSIGN1_3_3
-      // TODO: your implementation of ASSIGN1_3_3 here
       float m_new = fmaxf(row_m_prev, row_m);
-      float l_new = __expf(row_m_prev - m_new) * row_l_prev + __expf(row_m - m_new) * row_l;
+      float prev_scale = __expf(row_m_prev - m_new);
+      float tile_scale = __expf(row_m - m_new);
+      float l_new = prev_scale * row_l_prev + tile_scale * row_l;
+      float *o_row = O + qkv_offset + ((long)i * Br + tx) * d;
+
       for (int x = 0; x < d; x++) {
-        float dot = 0.0f;
+        float pv = 0.0f;
         for (int y = 0; y < Bc; y++) {
-            dot += S[tx * Bc + y] * Vj[y * d + x];
+          pv += S[tx * Bc + y] * Vj[y * d + x];
         }
-        O[qkv_offset + ((Br * i) + tx) * d + x] = (row_l_prev * __expf(row_m_prev - m_new) * O[qkv_offset + ((Br * i) + tx) * d + x] + __expf(row_m - m_new) * dot) / l_new;
+        o_row[x] = (prev_scale * row_l_prev * o_row[x] +
+                    tile_scale * pv) / l_new;
       }
-      m[lm_offset + (Br * i) + tx] = m_new;
-      l[lm_offset + (Br * i) + tx] = l_new;
+      m[lm_offset + i * Br + tx] = m_new;
+      l[lm_offset + i * Br + tx] = l_new;
       // END ASSIGN1_3_3
     }
     __syncthreads();
