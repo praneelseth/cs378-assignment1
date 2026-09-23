@@ -39,8 +39,13 @@ __global__ void scores_kernel(const float *Q, const float *K, float *S,
   const float *k_row = K + ((long)bh * N + k) * d;
 
   // BEGIN ASSIGN1_2_1
-  // TODO: compute dot = sum_x q_row[x] * k_row[x], scale it, apply the causal
-  // mask (S = -inf when k > q), and write S[idx].
+  if (causal && k > q) {
+    S[idx] = -INFINITY;
+  } else {
+    float dot = 0.0f;
+    for (int x = 0; x < d; x++) dot += q_row[x] * k_row[x];
+    S[idx] = dot * scale;
+  }
   // END ASSIGN1_2_1
 }
 
@@ -78,7 +83,11 @@ __global__ void output_kernel(const float *P, const float *V, float *O,
   const float *p_row = P + ((long)bh * N + q) * N;
 
   // BEGIN ASSIGN1_2_2
-
+  float out = 0.0f;
+  for (int k = 0; k < N; k++) {
+    out += p_row[k] * V[((long)bh * N + k) * d + x];
+  }
+  O[idx] = out;
   // END ASSIGN1_2_2
 }
 
